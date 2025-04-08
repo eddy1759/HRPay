@@ -1,0 +1,25 @@
+# Node specific
+node_modules/
+dist/
+build/
+coverage/
+*.log
+
+# Lock files
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+
+# Prisma generated client
+**/prisma/generated/
+
+# Environment files
+.env*
+
+# Config files (optional, if you don't want them formatted)
+# *.config.js
+# *.config.cjs
+
+# Other generated files or directories
+# public/
+# temp/

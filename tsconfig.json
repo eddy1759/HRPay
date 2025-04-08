@@ -1,0 +1,29 @@
+{
+	"compilerOptions": {
+		"noEmit": true,
+		"module": "ESNext",
+		"lib": ["esnext"],
+		"sourceMap": true,
+		"strict": true,
+		"moduleResolution": "node",
+		"baseUrl": ".",
+		"experimentalDecorators": true,
+		"removeComments": true,
+		"forceConsistentCasingInFileNames": true,
+		"skipLibCheck": true,
+		"strictNullChecks": false,
+		"noImplicitAny": false,
+		"allowSyntheticDefaultImports": true,
+		"strictBindCallApply": false,
+		"noFallthroughCasesInSwitch": false,
+		"incremental": true,
+		"tsBuildInfoFile": "./node_modules/typescript/tsbuildinfo",
+		"esModuleInterop": true,
+		"allowImportingTsExtensions": true,
+		"paths": {
+			"@/*": ["src/*"]
+		}
+	},
+	"include": ["src/**/*"],
+	"exclude": ["node_modules", "build", "dist", "**/*.test.ts"]
+}

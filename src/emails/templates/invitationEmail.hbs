@@ -1,0 +1,12 @@
+<div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #ddd; border-radius: 5px;">
+    <h1>You're Invited!</h1>
+    <p>Hello{{#if recipientName}}, {{recipientName}}{{/if}},</p>
+    <p>You have been invited by <strong>{{companyName}}</strong> to join their team on Payroll Pro.</p>
+    <p>Please click the button below to accept the invitation and set up your account:</p>
+    <a href="{{invitationUrl}}" style="background-color: #28a745; color: white; padding: 10px 15px; text-decoration: none; border-radius: 5px; display: inline-block; font-family: Arial, sans-serif; font-size: 16px;">Accept Invitation</a>
+    <p style="margin-top: 15px;">Alternatively, copy and paste this link into your browser:<br>
+       <a href="{{invitationUrl}}">{{invitationUrl}}</a>
+    </p>
+    <p>If you were not expecting this invitation, you can safely ignore this email.</p>
+    <p>Best regards,<br>The Payroll Pro Team</p>
+</div>
