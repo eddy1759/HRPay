@@ -1,9 +1,12 @@
 import bcrypt from 'bcrypt';
+import { Request } from 'express';
 import jwt, { JwtPayload } from 'jsonwebtoken';
 import { User, UserRole } from '@prisma/client';
 import logger from '../config/logger';
 import env from '../config/env';
 import { BadRequestError, InternalServerError, UnauthorizedError } from '../utils/ApiError';
+import { AuthenticatedUser, AuthRequest } from '../middleware/authMiddleware';
+
 
 interface AccessTokenPayload extends jwt.JwtPayload {
     id: string; // Changed from userId to id (matches User model, common practice like 'sub')
@@ -18,6 +21,14 @@ interface EmailVerificationTokenPayload extends jwt.JwtPayload {
 	email: string; // User email for confirmation
 }
 
+
+export const getAuthenticatedUser = (req: Request): AuthenticatedUser => {
+	const user = (req as AuthRequest).user;
+	if (!user) {
+		 throw new UnauthorizedError('Authentication required.');
+	}
+	return user;
+};
 
 
 /**

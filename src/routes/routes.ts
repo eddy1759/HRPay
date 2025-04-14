@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import authRouter from '../modules/auth/auth.routes';
 import inviteRouter from '@/modules/invitation/invite.routes';
+import companyRouter from '@/modules/company/company.routes';
 
 const router = Router();
 
@@ -16,6 +17,10 @@ const defaultRoutes: {
 		path: '/invites',
 		route: inviteRouter,
 	},
+	{
+		path: '/companies',
+		route: companyRouter,
+	}
 ];
 
 defaultRoutes.forEach((route) => {
@@ -37,3 +42,5 @@ export default router;
 // This structure allows for easy addition of new routes in the future, promoting scalability.
 // The router is exported as the default export of the module, making it available for import in other parts of the application.
 // The code is well-structured and follows best practices for organizing routes in an Express application.
+// The use of async/await and try/catch blocks ensures that asynchronous operations are handled gracefully.
+

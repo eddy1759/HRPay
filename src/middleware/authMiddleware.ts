@@ -110,3 +110,23 @@ export const authMiddleware: RequestHandler = async (
         }
 	}
 };
+
+// Role based authorize middleware
+export const authorize = (allowedRoles: User['role'][]): RequestHandler => {
+	return (req: Request, res: Response, next: NextFunction) => {
+		const authReq = req as AuthRequest;
+		const user = authReq.user;
+
+		if (!user) {
+			logger.warn('Authorization failed: User information is missing from the request.');
+			return next(new UnauthorizedError('User authentication required.'));
+		}
+
+		if (!allowedRoles.includes(user.role)) {
+			logger.warn({ userId: user.id, userRole: user.role }, 'Authorization failed: User does not have the required role.');
+			return next(new ApiError(403, 'Forbidden: You do not have permission to access this resource.'));
+		}
+
+		next();
+	};
+}
