@@ -3,18 +3,11 @@ import { Request, Response, NextFunction } from 'express';
 import { StatusCodes } from 'http-status-codes';
 import { authService } from './auth.service';
 import { asyncWrapper } from '../../utils/asyncWrapper'; 
-import { userService } from '../user/user.service';
 import { LoginInput, RegisterInput, ResendVerificationInput, RegisterCompanyInput } from './validate'; // Add Resend type
 import {
-	UnauthorizedError,
-	NotFoundError,
-	ForbiddenError,
-	ApiError,
 	BadRequestError,
-	ConflictError,
 } from '../../utils/ApiError';
-import { authUtils } from '../../utils/auth.utils';
-import logger from '../../config/logger';
+
 
 
 export const registerCompanyHandler = asyncWrapper(

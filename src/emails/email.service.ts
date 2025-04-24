@@ -9,7 +9,7 @@ import path from 'path';
 import logger from '../config/logger';
 import env from '../config/env';
 import { InternalServerError } from '../utils/ApiError';
-import { inviteUtils } from '@/modules/invitation/invite.utils';
+import { inviteUtils } from '@/features/invitation/invite.utils';
 
 interface SMTPConfig {
 	host: string;

@@ -1,46 +1,75 @@
 import { Router } from 'express';
-import authRouter from '../modules/auth/auth.routes';
-import inviteRouter from '@/modules/invitation/invite.routes';
-import companyRouter from '@/modules/company/company.routes';
 
+import authRouter from '@/features/auth/auth.routes';
+import inviteRouter from '@/features/invitation/invite.routes';
+import companyRouter from '@/features/company/company.routes';
+import { payrollRouter } from '@/features/payroll/payroll.routes';
+import { employeeRouter } from '@/features/employee/employee.routes';
+import leaveRouter from '@/features/leave/leave.routes'; 
+
+
+/**
+ * @module apiRouter
+ * @description The main application router.
+ *
+ * This module aggregates all feature-specific routers and mounts them
+ * under their respective base paths. This centralizes route definition
+ * and promotes a clean, modular application structure.
+ */
 const router = Router();
 
-const defaultRoutes: {
-	path: string;
-	route: Router;
-}[] = [
-	{
-		path: '/auth',
-		route: authRouter,
-	},
-	{
-		path: '/invites',
-		route: inviteRouter,
-	},
-	{
-		path: '/companies',
-		route: companyRouter,
-	}
+/**
+ * @typedef {Object} RouteConfig
+ * @property {string} path - The base path where the router will be mounted (e.g., '/auth').
+ * @property {Router} route - The Express Router instance for the specific feature.
+ */
+
+/**
+ * @description Array defining the configuration for each feature router,
+ * specifying the base path and the router instance to use.
+ * @type {RouteConfig[]}
+ */
+const featureRoutes = [
+    {
+        path: '/auth',
+        route: authRouter,
+    },
+    {
+        path: '/invites',
+        route: inviteRouter,
+    },
+    {
+        path: '/companies',
+        route: companyRouter,
+    },
+    {
+        path: '/payrolls',
+        route: payrollRouter,
+    },
+    {
+        path: '/employees',
+        route: employeeRouter,
+    },
+    {
+        path: '/leave',
+        route: leaveRouter,
+    },
 ];
 
-defaultRoutes.forEach((route) => {
-	router.use(route.path, route.route);
+
+/**
+ * @description Iterates through the featureRoutes array and mounts each
+ * feature router onto the main application router at its defined path.
+ * This process essentially builds the complete API route structure.
+ */
+featureRoutes.forEach((route) => {
+    router.use(route.path, route.route);
 });
 
+/**
+ * @description Exports the main application router, configured with all
+ * feature-specific routes mounted.
+ * @exports default
+ */
 export default router;
-
-// This file is responsible for defining the main routes of the application.
-// It imports the authentication routes and mounts them under the '/auth' path.
-// This allows for a clean separation of concerns, making it easier to manage and scale the application.
-// The router is then exported for use in the main application file (e.g., index.ts).
-// The defaultRoutes array can be extended in the future to include other routes, such as employee management, payroll processing, etc.
-// This modular approach enhances maintainability and readability of the codebase.
-// The use of TypeScript interfaces and types ensures type safety and better developer experience.
-// The router is created using the express Router() method, which allows for defining modular route handlers.
-// Each route is defined with a path and the corresponding route handler.
-// The forEach loop iterates over the defaultRoutes array and mounts each route on the main router.
-// This structure allows for easy addition of new routes in the future, promoting scalability.
-// The router is exported as the default export of the module, making it available for import in other parts of the application.
-// The code is well-structured and follows best practices for organizing routes in an Express application.
-// The use of async/await and try/catch blocks ensures that asynchronous operations are handled gracefully.
 

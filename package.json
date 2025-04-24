@@ -35,6 +35,9 @@
 		"prestart": "yarn build"
 	},
 	"dependencies": {
+		"@langchain/community": "^0.3.41",
+		"@langchain/core": "^0.3.44",
+		"@langchain/openai": "^0.5.5",
 		"@prisma/client": "^5.10.0",
 		"@types/bcryptjs": "^2.4.6",
 		"amqplib": "^0.10.7",
@@ -56,10 +59,12 @@
 		"http-status-codes": "^2.3.0",
 		"jsonwebtoken": "^9.0.2",
 		"nodemailer": "^6.10.0",
+		"openai": "^4.95.1",
 		"pino": "^9.6.0",
 		"pino-http": "^10.4.0",
 		"pino-pretty": "^13.0.0",
 		"redis": "^4.7.0",
+		"together-ai": "^0.15.1",
 		"vaul": "^1.1.0",
 		"zod": "^3.23.8",
 		"zod-validation-error": "^3.4.0"

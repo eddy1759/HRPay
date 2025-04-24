@@ -6,8 +6,7 @@ import { createServer } from './serverUtils';
 import { amqpWrapper } from '../lib/amqplib';
 import { redisService } from '../lib/redis';
 import { connectToDatabase, dBisConnected, disconnectFromDatabase } from '../lib/prisma';
-
-// import { startBackgroundProcesses } from '../consumer/index'; // Assuming correct export path
+import { startPayrollJobProcessor } from '../features/jobs/payrollJob.processor'; // Import the job processor starter
 import { setupGracefulShutdown } from './shutdown'; // Assuming correct export path
 
 const isProduction = env.NODE_ENV === 'production';
@@ -25,10 +24,12 @@ export async function startServer(): Promise<void> {
 		await amqpWrapper.initialize();
 		await connectToDatabase(); // Throws on failure
 
-		// // 3. Start background processes/consumers
-		// logger.info('Starting background processes...');
-		// await startBackgroundProcesses(); // Assuming async start
-		// logger.info('Background processes started.');
+		// 3. Start background processes/consumers
+		logger.info('Starting background job processors...');
+		// Start payroll processor (awaits setup, but runs consumer in background)
+		await startPayrollJobProcessor();
+		// Add other processors here if needed
+		logger.info('Background job processors setup initiated.');
 
 		// 4. Start the HTTP Server
 		const mainPort = process.env.PORT || env.PORT; // process.env.PORT takes precedence in production or any environment where it's set

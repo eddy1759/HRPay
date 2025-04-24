@@ -1,7 +1,15 @@
 import amqp, { Channel, Connection, ConsumeMessage, Options } from 'amqplib';
 import { EventEmitter } from 'events';
 import env from '../config/env';
-import logger from '../config/logger'; // Import the application logger
+import logger from '../config/logger'; 
+
+interface QueueSetupOptions {
+    queueName: string;
+    options?: Options.AssertQueue;
+    deadLetterExchange?: string;
+    deadLetterQueueName?: string;
+    deadLetterRoutingKey?: string; // Routing key for messages going to DLX
+}
 
 /**
  * Wrapper class for AMQP (RabbitMQ) connection and channel management
@@ -9,6 +17,7 @@ import logger from '../config/logger'; // Import the application logger
 class AMQPWrapper extends EventEmitter {
 	private connection: Connection | null = null;
 	private channels: Map<string, Channel> = new Map();
+	private consumerChannels: Map<string, Channel> = new Map();
 	private reconnectTimeout: NodeJS.Timeout | null = null;
 	private readonly url: string;
 	private readonly maxReconnectAttempts: number;
@@ -137,18 +146,6 @@ class AMQPWrapper extends EventEmitter {
 		}, delay);
 	}
 
-	// Method to re-setup channels after a reconnect (if needed)
-	private async reinitializeChannels(): Promise<void> {
-		// Example: If you have predefined queues/consumers, re-assert them here
-		// try {
-		//     await this.assertQueue('some_important_queue', { durable: true });
-		//     logger.info('Re-asserted queue: some_important_queue');
-		//     // Re-start consumers if necessary
-		// } catch (error) {
-		//     logger.error({ err: error }, 'Failed to reinitialize channels after reconnect');
-		// }
-	}
-
 	private async getOrCreateChannel(queue: string): Promise<Channel> {
 		if (!this.connection) {
 			logger.error('Cannot create channel, RabbitMQ connection not available.');
@@ -190,18 +187,80 @@ class AMQPWrapper extends EventEmitter {
 		// Consider the implications if a consumer was attached to this channel
 	}
 
+	private async reinitializeChannels(): Promise<void> {
+        logger.info('Reinitializing channels and consumers after connection.');
+        // Example: Re-assert known queues/exchanges if necessary
+        // for (const queueName of this.consumerChannels.keys()) {
+        //     try {
+        //         // You might need to store consumer callbacks and options to restart them
+        //         logger.info(`Attempting to re-establish consumer for queue: ${queueName}`);
+        //         // await this.consumeMessages(queueName, storedCallback, storedOptions, storedConcurrency);
+        //     } catch (error) {
+        //          logger.error({ err: error, queue: queueName }, `Failed to re-establish consumer for queue ${queueName}`);
+        //     }
+        // }
+        // Add logic here if you need to automatically restart consumers upon reconnection.
+        // This example focuses on setup via startPayrollJobProcessor.
+    }
+
+	/**
+     * Sets up a queue with optional Dead Letter Exchange configuration.
+     */
+    public async setupQueueWithDLX(config: QueueSetupOptions): Promise<void> {
+        const {
+            queueName,
+            options = { durable: true },
+            deadLetterExchange,
+            deadLetterQueueName,
+            deadLetterRoutingKey = queueName // Default DL routing key to queue name
+        } = config;
+
+        try {
+            const channel = await this.getOrCreateChannel(`setup-${queueName}`);
+            logger.info(`Setting up queue [${queueName}] with DLX config...`);
+
+            // 1. Declare DLX (if specified)
+            if (deadLetterExchange) {
+                await channel.assertExchange(deadLetterExchange, 'direct', { durable: true });
+                logger.info(`Dead Letter Exchange [${deadLetterExchange}] asserted.`);
+            }
+
+            // 2. Declare Dead Letter Queue (if specified)
+            if (deadLetterExchange && deadLetterQueueName) {
+                await channel.assertQueue(deadLetterQueueName, { durable: true });
+                logger.info(`Dead Letter Queue [${deadLetterQueueName}] asserted.`);
+                // 3. Bind DLQ to DLX
+                await channel.bindQueue(deadLetterQueueName, deadLetterExchange, deadLetterRoutingKey);
+                logger.info(`Dead Letter Queue [${deadLetterQueueName}] bound to DLX [${deadLetterExchange}] with key [${deadLetterRoutingKey}].`);
+            }
+
+            // 4. Declare Main Queue with DLX arguments (if specified)
+            const queueArgs = options.arguments || {};
+            if (deadLetterExchange) {
+                queueArgs['x-dead-letter-exchange'] = deadLetterExchange;
+                if (deadLetterRoutingKey) {
+                    queueArgs['x-dead-letter-routing-key'] = deadLetterRoutingKey;
+                }
+            }
+            await channel.assertQueue(queueName, { ...options, arguments: queueArgs });
+            logger.info(`Main queue [${queueName}] asserted with DLX arguments.`);
+
+        } catch (error) {
+            logger.error({ err: error, queue: queueName }, `Failed to setup queue [${queueName}] with DLX.`);
+            throw error;
+        }
+    }
+
+
 	public async publishMessage(
 		queue: string,
 		message: any | any[],
 		options: Options.Publish = {}
 	): Promise<boolean> {
 		try {
-			const channel = await this.getOrCreateChannel(queue);
+			const channel = await this.getOrCreateChannel(`publish-${queue}`);
 			const messagesToPublish = Array.isArray(message) ? message : [message];
 
-			// Using Promise.all ensures all messages are attempted to be sent.
-			// Note: sendToQueue is technically asynchronous but returns boolean immediately.
-			// Waiting for drain event might be needed for high throughput scenarios.
 			const results = messagesToPublish.map((msg) =>
 				channel.sendToQueue(queue, Buffer.from(JSON.stringify(msg)), {
 					persistent: true, // Ensure messages survive broker restart
@@ -214,9 +273,10 @@ class AMQPWrapper extends EventEmitter {
 				logger.warn(
 					`RabbitMQ buffer full for queue ${queue}. Message(s) may be dropped or delayed.`
 				);
-				// Optionally wait for 'drain' event before resolving or returning false
-				// await new Promise(resolve => channel.once('drain', resolve));
-				// return false; // Indicate potential issue
+				
+				await new Promise(resolve => channel.once('drain', resolve));
+				logger.info(`RabbitMQ drain event received for queue ${queue}.`)
+				return false; // Indicate potential issue
 			}
 
 			// logger.debug(`Published ${messagesToPublish.length} message(s) to queue ${queue}`);
@@ -227,54 +287,79 @@ class AMQPWrapper extends EventEmitter {
 		}
 	}
 
-	public async consumeMessages(
-		queue: string,
-		callback: (message: any) => Promise<void>, // Simplified: process one message at a time
-		options: Options.Consume = { noAck: false }, // Default to manual acknowledgment
-		concurrency: number = 1 // How many messages to process concurrently
-	): Promise<void> {
-		try {
-			const channel = await this.getOrCreateChannel(queue);
-			await channel.prefetch(concurrency); // Process 'concurrency' messages at a time
+	public async consumeMessages<T = any>(
+        queue: string,
+        callback: (message: T) => Promise<boolean>,
+        options: Options.Consume = { noAck: false }, // Explicitly default to manual ACK
+        concurrency: number = 1
+    ): Promise<{ consumerTag: string; channel: Channel }> {
+        if (options.noAck === true) {
+             logger.warn(`Consumer for queue ${queue} started with noAck=true. Message loss possible.`);
+        }
+         if (this.consumerChannels.has(queue)) {
+            logger.warn(`Consumer already exists for queue ${queue}. Skipping.`);
+            // Or potentially throw an error, depending on desired behavior
+            throw new Error(`Consumer already registered for queue ${queue}`);
+         }
 
-			logger.info(`Starting consumer for queue ${queue} with concurrency ${concurrency}`);
 
-			await channel.consume(
-				queue,
-				async (msg: ConsumeMessage | null) => {
-					if (msg) {
-						let messageContent: any;
-						try {
-							messageContent = JSON.parse(msg.content.toString());
-						} catch (parseError) {
-							logger.error(
-								{ err: parseError, queue },
-								'Failed to parse message content from queue'
-							);
-							channel.nack(msg, false, false); // Discard unparseable message
-							return;
-						}
+        try {
+            // Create or get a dedicated channel for this consumer to manage prefetch correctly
+            const channel = await this.getOrCreateChannel(`consumer-${queue}`);
+            await channel.prefetch(concurrency);
+            this.consumerChannels.set(queue, channel); // Track consumer channel
 
-						try {
-							await callback(messageContent);
-							channel.ack(msg); // Acknowledge message success
-						} catch (processingError) {
-							logger.error(
-								{ err: processingError, queue, message: messageContent },
-								`Error processing message from queue ${queue}`
-							);
-							// Decide whether to requeue based on the error type
-							channel.nack(msg, false, false); // false: don't requeue failed message (move to DLQ if configured)
-						}
-					}
-				},
-				options // Pass consumer options (like noAck)
-			);
-		} catch (error) {
-			logger.error({ err: error, queue }, `Error setting up consumer for queue ${queue}`);
-			throw error; // Propagate error to potentially stop the service or retry setup
-		}
-	}
+            logger.info(`Starting consumer for queue ${queue} with concurrency ${concurrency}`);
+
+            const { consumerTag } = await channel.consume(
+                queue,
+                async (msg: ConsumeMessage | null) => {
+                    if (msg) {
+                        let messageContent: T;
+                        try {
+                            messageContent = JSON.parse(msg.content.toString()) as T;
+                        } catch (parseError) {
+                            logger.error( { err: parseError, queue, messageId: msg.properties.messageId }, 'Failed to parse message content');
+                            // Discard unparseable message - permanent failure
+                            channel.nack(msg, false, false);
+                            return;
+                        }
+
+                        try {
+                            // Call the provided processing function
+                            const success = await callback(messageContent);
+
+                            // MODIFIED ACK/NACK Logic
+                            if (success) {
+                                channel.ack(msg); // Acknowledge success
+                                // logger.debug(`Message processed successfully, ACK sent. Queue: ${queue}`);
+                            } else {
+                                logger.warn(`Processing callback returned false for message. NACKing (no requeue). Queue: ${queue}, MsgId: ${msg.properties.messageId}`);
+                                channel.nack(msg, false, false); // Permanent failure indicated by callback
+                            }
+                        } catch (processingError) {
+                            logger.error( { err: processingError, queue, messageId: msg.properties.messageId, message: messageContent }, `Error processing message from queue ${queue}. NACKing (no requeue).` );
+                            // Treat errors as permanent failures for this consumer, rely on DLX
+                            channel.nack(msg, false, false);
+                        }
+                    } else {
+                         logger.warn(`Received null message for queue ${queue}, possibly due to queue deletion.`);
+                         // Channel might be closing or queue deleted
+                         this.consumerChannels.delete(queue); // Assume consumer is dead
+                    }
+                },
+                // Ensure noAck is false unless explicitly overridden
+                { ...options, noAck: false }
+            );
+             logger.info(`Consumer started for queue ${queue} with consumerTag [${consumerTag}]`);
+             return { consumerTag, channel }; // Return tag and channel for potential cancellation
+
+        } catch (error) {
+            logger.error({ err: error, queue }, `Error setting up consumer for queue ${queue}`);
+             this.consumerChannels.delete(queue); // Clean up tracking if setup failed
+            throw error;
+        }
+    }
 
 	public isConnected(): boolean {
 		// Check if connection exists and is not closing

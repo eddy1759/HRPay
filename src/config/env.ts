@@ -39,6 +39,14 @@ const envSchema = z.object({
 	INVITE_SECRET: z.string().min(1, 'INVITE_SECRET is required'),
 	DB_TOKEN_EXPIRY_HOURS: z.preprocess((val) => Number(val) || 24, z.number().min(1)),
 	INVITE_JWT_EXPIRY: z.string().default('2h'),
+	// --- AI Configuration ---
+	OPENAI_API_KEY: z.string().min(1, 'OPENAI_API_KEY is required for AI features'),
+	TOGETHER_API_KEY: z.string().min(1, 'TOGETHER_API_KEY is required for AI features'),
+	OPENAI_TEMPERATURE: z.preprocess((val) => Number(val) || 0.2, z.number().min(0).max(1)),
+	OPENAI_MODEL: z.string().default('gpt-3.5-turbo-instruct'),
+	OPENAI_API_URL: z.string().default('https://api.openai.com/v1/chat/completions'),
+	OPENAI_API_TIMEOUT: z.preprocess((val) => Number(val) || 15000, z.number().min(1)),
+	OPENAI_API_RETRIES: z.preprocess((val) => Number(val) || 2, z.number().min(1)),
 });
 
 const env = envSchema.parse(process.env);
