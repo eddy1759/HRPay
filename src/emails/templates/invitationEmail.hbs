@@ -1,12 +1,118 @@
-<div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #ddd; border-radius: 5px;">
-    <h1>You're Invited!</h1>
-    <p>Hello{{#if recipientName}}, {{recipientName}}{{/if}},</p>
-    <p>You have been invited by <strong>{{companyName}}</strong> to join their team on Payroll Pro.</p>
-    <p>Please click the button below to accept the invitation and set up your account:</p>
-    <a href="{{invitationUrl}}" style="background-color: #28a745; color: white; padding: 10px 15px; text-decoration: none; border-radius: 5px; display: inline-block; font-family: Arial, sans-serif; font-size: 16px;">Accept Invitation</a>
-    <p style="margin-top: 15px;">Alternatively, copy and paste this link into your browser:<br>
-       <a href="{{invitationUrl}}">{{invitationUrl}}</a>
-    </p>
-    <p>If you were not expecting this invitation, you can safely ignore this email.</p>
-    <p>Best regards,<br>The Payroll Pro Team</p>
-</div>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <title>You're Invited!</title>
+     <style type="text/css">
+        /* Basic Reset */
+        body, table, td, a { -webkit-text-size-adjust: 100%; -ms-text-size-adjust: 100%; }
+        table, td { mso-table-lspace: 0pt; mso-table-rspace: 0pt; }
+        img { -ms-interpolation-mode: bicubic; border: 0; height: auto; line-height: 100%; outline: none; text-decoration: none; }
+        body { height: 100% !important; margin: 0 !important; padding: 0 !important; width: 100% !important; }
+        /* Client-specific Fixes */
+        #outlook a { padding: 0; }
+        .ReadMsgBody { width: 100%; } .ExternalClass { width: 100%; }
+        .ExternalClass, .ExternalClass p, .ExternalClass span, .ExternalClass font, .ExternalClass td, .ExternalClass div { line-height: 100%; }
+        /* Styles */
+        a { color: #28a745; text-decoration: underline; } /* Using green for links to match button */
+        .button-link {
+            display: inline-block;
+            padding: 12px 25px;
+            font-family: Arial, sans-serif;
+            font-size: 16px;
+            font-weight: bold;
+            color: #ffffff !important; /* Force white text */
+            text-decoration: none;
+            background-color: #28a745; /* Primary Button Color - Green */
+            border-radius: 5px;
+            border: 1px solid #28a745;
+        }
+        .button-link:hover { background-color: #218838; border-color: #218838; } /* Darker green on hover */
+    </style>
+</head>
+<body style="margin: 0 !important; padding: 0 !important; background-color: #f4f4f4;">
+
+    <div style="display: none; font-size: 1px; color: #f4f4f4; line-height: 1px; font-family: Arial, sans-serif; max-height: 0px; max-width: 0px; opacity: 0; overflow: hidden;">
+        You've been invited to join {{companyName}} on Payroll Pro. Accept your invitation inside.
+    </div>
+
+    <table border="0" cellpadding="0" cellspacing="0" width="100%">
+        <tr>
+            <td align="center" style="background-color: #f4f4f4;">
+                <table border="0" cellpadding="0" cellspacing="0" width="100%" style="max-width: 600px;">
+                    <tr>
+                        <td align="center" valign="top" style="padding: 20px 0;">
+                            <img src="https://i.imgur.com/X9BWZ8D.png" alt="Payroll Pro Logo" width="150" style="display: block; width: 150px;">
+                        </td>
+                    </tr>
+                    <tr>
+                        <td align="center" style="padding: 0 15px 20px 15px; background-color: #ffffff; border-radius: 5px;">
+                            <table border="0" cellpadding="0" cellspacing="0" width="100%" style="max-width: 600px;">
+                                <tr>
+                                    <td align="left" style="padding: 20px 0 10px 0; font-family: Arial, sans-serif; font-size: 24px; font-weight: bold; color: #333333;">
+                                        You're Invited!
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td align="left" style="padding: 10px 0; font-family: Arial, sans-serif; font-size: 16px; line-height: 1.5; color: #555555;">
+                                        Hello{{#if recipientName}} {{recipientName}}{{/if}},
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td align="left" style="padding: 10px 0; font-family: Arial, sans-serif; font-size: 16px; line-height: 1.5; color: #555555;">
+                                        You have been invited by <strong>{{companyName}}</strong> to join their team on Payroll Pro, a platform to manage payroll and related tasks efficiently.
+                                    </td>
+                                </tr>
+                                 <tr>
+                                    <td align="left" style="padding: 10px 0; font-family: Arial, sans-serif; font-size: 16px; line-height: 1.5; color: #555555;">
+                                        Please click the button below to accept the invitation and set up your account:
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td align="center" style="padding: 20px 0;">
+                                        <table border="0" cellspacing="0" cellpadding="0" role="presentation">
+                                            <tr>
+                                                <td align="center">
+                                                    <a href="{{invitationUrl}}" target="_blank" class="button-link" style="color: #ffffff;">Accept Invitation</a>
+                                                </td>
+                                            </tr>
+                                        </table>
+                                    </td>
+                                </tr>
+                                <tr>
+                                     <td align="left" style="padding: 10px 0; font-family: Arial, sans-serif; font-size: 16px; line-height: 1.5; color: #555555;">
+                                        If the button doesn't work, copy and paste this link into your browser:
+                                        <br>
+                                        <a href="{{invitationUrl}}" target="_blank" style="color: #28a745; word-break: break-all;">{{invitationUrl}}</a>
+                                    </td>
+                                </tr>
+                                 <tr>
+                                    <td align="left" style="padding: 10px 0 20px 0; font-family: Arial, sans-serif; font-size: 14px; line-height: 1.5; color: #777777;">
+                                       If you were not expecting this invitation or don't recognize the sender ({{companyName}}), please disregard this email.
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td align="left" style="padding: 0 0 20px 0; font-family: Arial, sans-serif; font-size: 16px; line-height: 1.5; color: #555555;">
+                                        Best regards,<br>
+                                        The Payroll Pro Team
+                                    </td>
+                                </tr>
+                            </table>
+                        </td>
+                    </tr>
+                     <tr>
+                        <td align="center" style="padding: 20px 15px; font-family: Arial, sans-serif; font-size: 12px; line-height: 1.5; color: #888888;">
+                           This invitation was sent to {{recipientEmail}} by {{companyName}} via Payroll Pro. <br>
+                            &copy; {{currentYear}} Payroll Pro. All rights reserved.
+                             <br>
+                            [Optional: Your Company Address]
+                        </td>
+                    </tr>
+                </table>
+                </td>
+        </tr>
+    </table>
+</body>
+</html>

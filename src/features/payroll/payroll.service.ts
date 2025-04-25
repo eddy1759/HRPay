@@ -118,8 +118,6 @@ const createPayroll = async (
     const published = await amqpWrapper.publishMessage('PAYROLL_JOB_QUEUE', jobPayload);
   
     if (!published) {
-      // Critical Failure: DB commit succeeded, but queuing failed.
-      // This requires manual intervention or a compensating action.
       logger.error(`CRITICAL: Failed to publish payroll calculation job for payrollId: ${newPayroll.id}. Payroll created but calculation not queued.`);
       // Option 1: Update payroll status to ERROR state
       await prisma.payroll.update({

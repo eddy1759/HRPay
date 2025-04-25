@@ -22,13 +22,15 @@ import {
 	UnauthorizedError,
 	BadRequestError,
 } from '../../utils/ApiError';
+import { EmailJobPayload } from '../jobs/emailJob.processor';
+import { amqpWrapper } from '../../lib/amqplib';
 
 // Roles allowed to perform invite actions (create, cancel, resend, list)
 const MANAGER_ROLES = [UserRole.ADMIN, UserRole.SUPER_ADMIN];
 
 class InviteService {
 	constructor(
-		private prismaClient: Prisma.TransactionClient | typeof prisma = prisma,
+		private prismaClient = prisma,
 		private emailer = emailService
 	) {}
 
@@ -52,7 +54,7 @@ class InviteService {
 			throw new NotFoundError(`User ${userId} performing action not found.`);
 		}
 		// SUPER_ADMIN bypasses company check but still needs role check if specific roles are required
-		if (user.role !== UserRole.SUPER_ADMIN && user.companyId !== companyId) {
+		if ((user.role !== UserRole.SUPER_ADMIN && user.role !== UserRole.ADMIN) && user.companyId !== companyId) {
 			throw new ForbiddenError(
 				'You do not have permission to manage resources for this company.'
 			);
@@ -86,6 +88,7 @@ class InviteService {
 		// Verify Inviter Permissions and Company Existence
 		await this._validateManagerPermissions(inviterId, companyId);
 		const company = await this.prismaClient.company.findUnique({ where: { id: companyId } });
+		console.log(company);
 
 		if (!company) throw new NotFoundError(`Company with ID ${companyId} not found.`);
 
@@ -168,15 +171,24 @@ class InviteService {
 		const emailJwt = await inviteUtils.generateInviteToken(jwtPayload);
 		const invitationUrl = inviteUtils.buildInvitationUrl(emailJwt);
 
-		try {
-			await this.emailer.sendUserInvitation(company.name, invitation.email, invitationUrl);
-			logger.info(
-				`Invitation email successfully sent to ${invitation.email} for invite ${invitation.id}`
-			);
-		} catch (error) {
+		// --- Publish Email Job to RabbitMQ  ---
+		const emailJobPayload: EmailJobPayload = {
+			type: 'invite',
+			to: lowerCaseEmail,
+			invitationUrl,
+			companyName: company.name,
+		};
+
+		const published = await amqpWrapper.publishMessage('email_job_queue', emailJobPayload);
+
+		if (!published) {
 			logger.error(
-				`CRITICAL: Failed to send invitation email for invite ID ${invitation.id} to ${invitation.email}:`,
-				error
+				`Failed to publish email job for invitation ${invitation.id} to ${lowerCaseEmail}.`
+			);
+			
+		} else {
+			logger.info(
+				`Invitation email job successfully queued for ${invitation.email} (Job ID: ${emailJobPayload.type}).`
 			);
 		}
 
@@ -227,130 +239,142 @@ class InviteService {
 		password: string,
 		firstName: string,
 		lastName: string
-	): Promise<User> {
+	): Promise<User> { // Assuming User is the Prisma User model type
 		// Verify the invitation token and extract data
 		const verifiedData = await this.verifyInvitation(token);
-
+	
 		if (verifiedData.invitedUserExists) {
 			logger.warn(
 				`Onboarding attempt failed: User ${verifiedData.invitationRecord.email} already exists.`
 			);
 			throw new ConflictError('An account with this email already exists. Please log in.');
 		}
-
+	
 		// Hash the password
 		const hashedPassword = await authUtils.hashPassword(password);
-
+	
 		// Prepare the data for the transaction using verified data
+		// Note: companyId should come from the invitation record, not the record's ID
 		const userData: UserOnboardingData = {
 			email: verifiedData.invitationRecord.email,
 			hashedPassword: hashedPassword,
-			companyId: verifiedData.invitationRecord.id,
-			role: UserRole.EMPLOYEE,
+			companyId: verifiedData.invitationRecord.companyId, // <-- Corrected: Use companyId from invitation
+			role: verifiedData.invitationRecord.role || UserRole.EMPLOYEE, // <-- Use role from invitation, default to EMPLOYEE
 			firstName: firstName,
 			lastName: lastName,
 		};
-
+	
 		const invitationId = verifiedData.invitationRecord.id;
-		let newUser;
-
-		// Execute onboarding transaction
+		let newUser; // Declare newUser outside transaction to be able to return it
+	
 		try {
-			// If we're already in a transaction, use the client directly
-			if (this.prismaClient instanceof PrismaClient) {
-				newUser = await this.prismaClient.$transaction(async (prisma) => {
-					// Create the user
-					const createdUser = await prisma.user.create({
-						data: {
-							email: userData.email,
-							password: userData.hashedPassword,
-							companyId: userData.companyId,
-							role: userData.role,
-							isVerified: true, // Set to true upon onboarding
-						},
-					});
-					logger.info(`User ${createdUser.id} created.`);
-
-					// Create Employee if role requires it
-					await prisma.employee.create({
-						data: {
-							firstName: userData.firstName,
-							lastName: userData.lastName,
-							email: userData.email, // Match user email
-							startDate: new Date(), // Set current date as start date
-							companyId: userData.companyId,
-							userId: createdUser.id, // Link to user
-						},
-					});
-					logger.info(`Employee record linked for User ${createdUser.id}.`);
-
-					// Update the invitation status to ACCEPTED
-					await prisma.invitation.update({
-						where: { id: invitationId },
-						data: { status: InviteStatus.ACCEPTED, acceptedByUserId: createdUser.id },
-						select: { id: true },
-					});
-					return createdUser;
-				});
-				logger.info(
-					`Onboarding successfully completed for user: ${newUser.email} (ID: ${newUser.id})`
-				);
-				return newUser;
-			} else {
-				// If we're already in a transaction, execute the operations directly
-				const createdUser = await this.prismaClient.user.create({
+			// Always initiate the transaction here within the service method
+			newUser = await this.prismaClient.$transaction(async (prisma) => {
+				// Create the user using the transactional client
+				const createdUser = await prisma.user.create({
 					data: {
 						email: userData.email,
 						password: userData.hashedPassword,
 						companyId: userData.companyId,
 						role: userData.role,
-						isVerified: true,
+						isVerified: true, // Set to true upon onboarding
 					},
 				});
-				logger.info(`User ${createdUser.id} created.`);
-
-				await this.prismaClient.employee.create({
+				logger.info(`[Transaction] User ${createdUser.id} created for invitation ${invitationId}.`);
+	
+				// Create Employee if role requires it (using the transactional client)
+				// Ensure employee creation logic is correct and links to the new user/company
+				await prisma.employee.create({
 					data: {
 						firstName: userData.firstName,
 						lastName: userData.lastName,
-						email: userData.email,
-						startDate: new Date(), // Set current date as start date
-						company: { connect: { id: userData.companyId } },
-						user: { connect: { id: createdUser.id } },
+						email: userData.email, // Match user email
+						companyId: userData.companyId, // Link to company via ID
+						userId: createdUser.id, // Link to user via ID
 					},
 				});
-				logger.info(`Employee record linked for User ${createdUser.id}.`);
-
-				await this.prismaClient.invitation.update({
+				 logger.info(`[Transaction] Employee record linked for User ${createdUser.id}.`);
+	
+	
+				// Update the invitation status to ACCEPTED (using the transactional client)
+				await prisma.invitation.update({
 					where: { id: invitationId },
 					data: { status: InviteStatus.ACCEPTED, acceptedByUserId: createdUser.id },
-					select: { id: true },
+					select: { id: true }, // Select a field to ensure a record is updated
 				});
-				logger.info(`Invitation ${invitationId} marked as ACCEPTED.`);
 
-				logger.info(
-					`Onboarding successfully completed for user: ${createdUser.email} (ID: ${createdUser.id})`
-				);
+				logger.info(`[Transaction] Invitation ${invitationId} marked as ACCEPTED by user ${createdUser.id}.`);
+
+				const companyName = await prisma.company.findUnique({
+					where: {
+						id: userData.companyId
+					},
+					select: {
+						name: true
+					}
+				})
+
+				// Public welcome email job to rabbitmq
+				const emailJobPayload: EmailJobPayload = {
+					type: 'welcome',
+					to: userData.email,
+					name: `${userData.firstName} ${userData.lastName}`,
+					companyName: companyName.name
+				};
+
+				const published = await amqpWrapper.publishMessage(
+					'email_job_queue',
+					emailJobPayload
+				)
+
+				if (!published) {
+					logger.error(
+						`Failed to publish email job for welcoming user ${emailJobPayload.name} to ${userData.email}.`
+					);
+				} else {
+					logger.info(
+						`Welcome email job successfully queue for user ${userData.email} (Job ID: ${emailJobPayload.type}).`
+					)
+				}
+
+				// Return the created user from the transaction callback
 				return createdUser;
-			}
+			});
+	
+			// This code runs only if the transaction successfully commits
 			logger.info(
-				`Onboarding successfully completed for user: ${newUser.email} (ID: ${newUser.id})`
+				`Onboarding successfully completed for user: ${newUser.email} (ID: ${newUser.id}) via invitation ${invitationId}.`
 			);
-			return newUser;
-		} catch (error) {
+			return newUser; // Return the user created in the transaction
+	
+		} catch (error: any) { // Catch specific errors if possible, otherwise use any
+			// Log the original error details for debugging
 			logger.error(
 				`Onboarding transaction failed for email ${userData.email}, invitation ${invitationId}:`,
-				error
+				error // Log the full error object here!
 			);
+	
 			// Handle specific Prisma errors if necessary (like in utils example)
-			if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
-				throw new ConflictError(
-					'Onboarding failed due to a data conflict (e.g., email race condition).'
-				);
+			if (error instanceof Prisma.PrismaClientKnownRequestError) {
+				 // Log Prisma specific error details
+				 logger.error(`Prisma Error Code: ${error.code}, Meta: ${JSON.stringify(error.meta)}`);
+				 if (error.code === 'P2002') { // Unique constraint violation
+					 throw new ConflictError(
+						 'Onboarding failed due to a data conflict (e.g., email already registered).'
+					 );
+				 }
+				 // Add other specific Prisma error code checks if needed
 			}
-			if (error instanceof ApiError) throw error; // Re-throw known API errors
+	
+			if (error instanceof ApiError) {
+				// Re-throw known API errors (like from verifyInvitation)
+				throw error;
+			}
+	
+			// For any other unexpected errors, throw a generic InternalServerError
+			// The original error details are already logged above
 			throw new InternalServerError(
-				'Failed to complete onboarding process due to a database error.'
+				'Failed to complete onboarding process due to an unexpected error.'
 			);
 		}
 	}
@@ -405,21 +429,26 @@ class InviteService {
 		const newEmailJwt = await inviteUtils.generateInviteToken(jwtPayload);
 		const newInvitationUrl = inviteUtils.buildInvitationUrl(newEmailJwt);
 
-		// Send email with the new URL (async)
-		this.emailer
-			.sendUserInvitation(invitation.company.name, invitation.email, newInvitationUrl)
-			.then(() =>
-				logger.info(
-					`Resent invitation email successfully queued/sent to ${invitation.email} for invite ${invitationId}`
-				)
-			)
-			.catch((emailError) => {
-				logger.error(
-					`CRITICAL: Failed to RESEND invitation email for invite ID ${invitation.id} to ${invitation.email}:`,
-					emailError
-				);
-				// Logged, but operation doesn't fail here.
-			});
+
+		const emailJobPayload: EmailJobPayload = {
+			type: 'invite',
+			to: invitation.email,
+			invitationUrl: newInvitationUrl,
+			companyName: invitation.company.name,
+		};
+
+		const published = await amqpWrapper.publishMessage('email_job_queue', emailJobPayload);
+
+		if (!published) {
+			logger.error(
+				`Failed to publish email job for invitation ${invitation.id} to ${invitation.email}.`
+			);
+			
+		} else {
+			logger.info(
+				`Invitation email job successfully queued for ${invitation.email} (Job ID: ${emailJobPayload.type}).`
+			);
+		}
 	}
 
 	/**
@@ -549,29 +578,59 @@ class InviteService {
         // 4. Link user to the company and accept invite (within a transaction)
 		logger.info(`Linking existing user ${loggedInUserId} to company ${company.id} via invitation ${invitationRecord.id}.`);
 		try {
-			const [, updatedUser] = await prisma.$transaction([
+			const [, updatedUser, employeeData] = await prisma.$transaction([
 				 // Update Invitation status
-				 this.prismaClient.invitation.update({
-					  where: { id: invitationRecord.id },
-                      data: {
-                           status: InviteStatus.ACCEPTED,
-                           acceptedByUserId: loggedInUserId,
-                      },
-                      select: { id: true } // Minimal selection
-                 }),
-                 // Update User's companyId
-                 this.prismaClient.user.update({
-                      where: { id: loggedInUserId },
-                      data: {
-                           companyId: company.id,
-                           // IMPORTANT: Role Update Logic Needed?
-                           // If the invite role is different from user's current role,
-                           // should it be updated? This depends on business rules.
-                           // Example: role: invitationRecord.role
-                      },
-                 }),
+					this.prismaClient.invitation.update({
+						where: { id: invitationRecord.id },
+						data: {
+							status: InviteStatus.ACCEPTED,
+							acceptedByUserId: loggedInUserId,
+						},
+						select: { id: true } // Minimal selection
+                 	}),
+                 	// Update User's companyId
+                 	this.prismaClient.user.update({
+                      	where: { id: loggedInUserId },
+						data: {
+							companyId: company.id,
+						},
+                	}),
+					this.prismaClient.employee.findUnique({
+						where: {
+							email: invitationRecord.email
+						},
+						select: {
+							firstName: true,
+							lastName: true
+						}
+					})
+				
             ]);
-             logger.info(`User ${loggedInUserId} successfully linked to ${company.id}. Invitation ${invitationRecord.id} accepted.`);
+            logger.info(`User ${loggedInUserId} successfully linked to ${company.id}. Invitation ${invitationRecord.id} accepted.`);
+
+			// Public company welcome email job to rabbitmq
+			const emailJobPayload: EmailJobPayload = {
+				type: 'welcome',
+				to: updatedUser.email,
+				name: `${employeeData.firstName} ${employeeData.lastName}`,
+				companyName: company.name
+			};
+
+			const published = await amqpWrapper.publishMessage(
+				'email_job_queue',
+				emailJobPayload
+			)
+
+			if (!published) {
+				logger.error(
+					`Failed to publish email job for welcoming user ${emailJobPayload.name} to ${emailJobPayload.to}.`
+				);
+			} else {
+				logger.info(
+					`Welcome email job successfully queue for user ${emailJobPayload.to} (Job ID: ${emailJobPayload.type}).`
+				)
+			}
+
             return updatedUser;
         } catch (error) {
              logger.error(`Failed to link user ${loggedInUserId} to company ${company.id} via invite ${invitationRecord.id}:`, error);

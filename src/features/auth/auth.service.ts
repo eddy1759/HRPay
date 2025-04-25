@@ -10,7 +10,8 @@ import {
 	UnauthorizedError,
 } from '../../utils/ApiError';
 import logger from '../../config/logger';
-import { emailService } from '../../emails/email.service';
+import { EmailJobPayload } from '../jobs/emailJob.processor';
+import { amqpWrapper } from '../../lib/amqplib';
 import { authUtils } from '../../utils/auth.utils';
 import { userService } from '../user/user.service';
 
@@ -105,11 +106,28 @@ const registerCompanyAndAdmin = async (
 				newAdminUser.id,
 				newAdminUser.email
 			);
-			await emailService.sendVerificationEmail(newAdminUser.email, verificationToken);
-			logger.info(
-				{ userId: newAdminUser.id, email: newAdminUser.email },
-				'Verification email triggered successfully for new admin'
+
+			const emailJobPayload: EmailJobPayload = {
+				type: 'verification',
+				to: newAdminUser.email,
+				token: verificationToken,
+				name: `${data.adminFirstName} ${data.adminLastName}`
+
+			}
+			
+			const published = await amqpWrapper.publishMessage(
+				'email_job_queue', emailJobPayload
 			);
+			if (!published) {
+				logger.error(
+					`Failed to publish email job for verification to ${newAdminUser.email}.`
+				);
+				
+			} else {
+				logger.info(
+					`Invitation email job successfully queued for ${newAdminUser.email} (Job ID: ${emailJobPayload.type}).`
+				);
+			}
 		} catch (emailError) {
 			logger.error(
 				{ err: emailError, userId: newAdminUser.id },
@@ -175,12 +193,25 @@ const registerUser = async (data: RegisterInput): Promise<Omit<User, 'password'>
 
 	try {
 		const verificationToken = authUtils.generateEmailVerificationToken(user.id, user.email);
-		await emailService.sendVerificationEmail(user.email, verificationToken);
-
-		logger.info(
-			{ userId: user.id, email: user.email },
-			'Verification email triggered successfully'
+		const emailJobPayload: EmailJobPayload = {
+			type: 'verification',
+			to: user.email,
+			token: verificationToken,
+		}
+		
+		const published = await amqpWrapper.publishMessage(
+			'email_job_queue', emailJobPayload
 		);
+		if (!published) {
+			logger.error(
+				`Failed to publish email job for verification to ${user.email}.`
+			);
+			
+		} else {
+			logger.info(
+				`Invitation email job successfully queued for ${user.email} (Job ID: ${emailJobPayload.type}).`
+			);
+		}
 	} catch (emailError) {
 		logger.error({ err: emailError }, 'Failed to send verification email after registration.');
 		throw new InternalServerError(
@@ -218,7 +249,22 @@ const verifyEmailTokenAndVerifyUser = async (token: string): Promise<Omit<User, 
 			throw new NotFoundError('User not found.');
 		}
 		if (updatedUser.isVerified) {
-			await emailService.sendWelcomeEmail(updatedUser.email);
+			const emailJobPayload: EmailJobPayload = {
+				type: 'welcome',
+				to: updatedUser.email,
+			};
+			const published = await amqpWrapper.publishMessage(
+				'email_job_queue', emailJobPayload
+			);
+			if (!published) {
+				logger.error(
+					`Failed to publish email job for welcome to ${updatedUser.email}.`
+				);
+				
+			}
+			logger.info(
+				`Welcome email job successfully queued for ${updatedUser.email} (Job ID: ${emailJobPayload.type}).`
+			);
 		}
 		logger.info({ userId: updatedUser.id }, 'User email verified successfully.');
 		return updatedUser;
@@ -246,8 +292,25 @@ export const resendVerificationEmail = async (email: string): Promise<string | v
 
 	try {
 		const verificationToken = authUtils.generateEmailVerificationToken(user.id, user.email);
-		await emailService.sendVerificationEmail(user.email, verificationToken);
-		logger.info({ userId: user.id }, 'Resent verification email successfully');
+		const emailJobPayload: EmailJobPayload = {
+			type: 'verification',
+			to: user.email,
+			token: verificationToken,
+		}
+		
+		const published = await amqpWrapper.publishMessage(
+			'email_job_queue', emailJobPayload
+		);
+		if (!published) {
+			logger.error(
+				`Failed to publish email job for verification to ${user.email}.`
+			);
+			
+		} else {
+			logger.info(
+				`Invitation email job successfully queued for ${user.email} (Job ID: ${emailJobPayload.type}).`
+			);
+		}
 	} catch (error) {
 		logger.error({ err: error, userId: user.id }, 'Failed to resend verification email.');
 		throw new InternalServerError('Failed to resend verification email.');

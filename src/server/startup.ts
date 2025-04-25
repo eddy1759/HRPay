@@ -6,10 +6,10 @@ import { createServer } from './serverUtils';
 import { amqpWrapper } from '../lib/amqplib';
 import { redisService } from '../lib/redis';
 import { connectToDatabase, dBisConnected, disconnectFromDatabase } from '../lib/prisma';
-import { startPayrollJobProcessor } from '../features/jobs/payrollJob.processor'; // Import the job processor starter
+import { startBackgroundJobs } from '../features/jobs/backgroundJob'; // Import the job processor starter
 import { setupGracefulShutdown } from './shutdown'; // Assuming correct export path
 
-const isProduction = env.NODE_ENV === 'production';
+
 
 /**
  * Initializes services, starts the main HTTP server, and sets up graceful shutdown.
@@ -27,7 +27,7 @@ export async function startServer(): Promise<void> {
 		// 3. Start background processes/consumers
 		logger.info('Starting background job processors...');
 		// Start payroll processor (awaits setup, but runs consumer in background)
-		await startPayrollJobProcessor();
+		await startBackgroundJobs();
 		// Add other processors here if needed
 		logger.info('Background job processors setup initiated.');
 
