@@ -12,6 +12,10 @@ const envSchema = z.object({
 	REDIS_URL: z.string().min(1, 'REDIS_URL is required'),
 	REDIS_INITIAL_CONNECT_RETRIES: z.preprocess((val) => Number(val) || 5, z.number().min(1)),
 	REDIS_INITIAL_CONNECT_BASE_DELAY: z.preprocess((val) => Number(val) || 200, z.number().min(1)),
+	REFRESH_TOKEN_REDIS_PREFIX: z.string().default('refresh_token'),
+	REVOKED_ACCESS_TOKEN_REDIS_PREFIX: z.string().default('revoked_access_token'),
+	REVOKED_REFRESH_TOKEN_REDIS_PREFIX: z.string().default('revoked_refresh_token'),
+	REFRESH_TOKEN_EXPIRY_SECONDS: z.preprocess((val) => Number(val) || 604800, z.number().min(1)), // 7 days
 	RABBITMQ_URL: z.string().min(1, 'RABBITMQ_URL is required'),
 	RABBITMQ_DEFAULT_USER: z.string().default('guest'),
 	RABBITMQ_DEFAULT_PASS: z.string().default('guest'),

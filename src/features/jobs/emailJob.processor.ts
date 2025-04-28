@@ -74,6 +74,9 @@ const processEmailJob = async (rawPayload: unknown): Promise<boolean> => {
     try {
         switch (payload.type) {
             case 'verification':
+                if (!payload.token || !payload.name) {
+                    throw new Error("Missing token or name for verification type after validation.");
+                }
                 await emailService.sendVerificationEmail(payload.to, payload.token, payload.name);
                 break;
             case 'invite':
@@ -83,9 +86,12 @@ const processEmailJob = async (rawPayload: unknown): Promise<boolean> => {
                 await emailService.sendUserInvitation(payload.companyName, payload.to, payload.invitationUrl);
                 break;
             case 'welcome':
-                await emailService.sendWelcomeEmailOnboarding(payload.to, payload.name);
-                if (payload.companyName) {
-                    await emailService.sendCompanyWelcomeEmail(payload.to, payload.companyName);
+                if (!payload.companyName) {
+                    logger.info(`Sending generic welcome email to ${payload.to}`);
+                    await emailService.sendWelcomeEmailOnboarding(payload.to, payload.name);
+                }else {
+                    logger.info(`Sending company welcome email to ${payload.to} for company ${payload.companyName}`);
+                    await emailService.sendCompanyWelcomeEmail(payload.to,  payload.companyName, payload.name);
                 }
                 break;
             default:
@@ -135,7 +141,11 @@ export const startEmailJobProcessor = async (): Promise<void> => { // Renamed fo
 
         await amqpWrapper.setupQueueWithDLX({
             queueName: queueName,
-            options: { durable: true }, // Standard options for main queue
+            options: { 
+                durable: true, 
+                'x-dead-letter-exchange': deadLetterExchange, 
+                'x-dead-letter-routing-key': 'email_job_retry' 
+            }, // Standard options for main queue
             deadLetterExchange: deadLetterExchange,
             deadLetterQueueName: deadLetterQueueName,
             deadLetterRoutingKey: queueName, 
@@ -163,23 +173,3 @@ export const startEmailJobProcessor = async (): Promise<void> => { // Renamed fo
         process.exit(1);
     }
 };
-
-// --- Graceful Shutdown Handling ---
-// const signals: NodeJS.Signals[] = ['SIGINT', 'SIGTERM'];
-
-// signals.forEach((signal) => {
-//     process.on(signal, async () => {
-//         logger.info(`Received ${signal}. Shutting down Email Job Processor worker gracefully...`);
-//         try {
-//             // Close RabbitMQ connection (this should ideally stop consumers)
-//             await amqpWrapper.close();
-//             logger.info('AMQP connection closed.');
-//             // Add any other cleanup tasks here
-//         } catch (error) {
-//             logger.error('Error during graceful shutdown:', error);
-//             process.exit(1); // Exit with error if cleanup fails
-//         }
-//         logger.info('Email Job Processor worker shut down complete.');
-//         process.exit(0); // Exit successfully
-//     });
-// });

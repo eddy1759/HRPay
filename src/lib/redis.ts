@@ -254,6 +254,71 @@ class RedisService {
 	}
 
 	/**
+	 * Sets a key-value pair in Redis with an optional expiration time.
+	 * @param key - The key to set.
+	 * @param value - The value to set.
+	 * @param expiration - Optional expiration time in seconds.
+	 * @returns Promise<void>
+	 */
+	public async set(key: string, value: string, expiration?: number): Promise<void> {
+		if (!this.isReady() || !this.client) {
+			throw new Error('Redis client is not connected or ready. Cannot set value.');
+		}
+		try {
+			if (expiration) {
+				await this.client.set(key, value, { EX: expiration });
+			} else {
+				await this.client.set(key, value);
+			}
+		} catch (error) {
+			logger.error(
+				`Error setting key ${key} in Redis: ${error instanceof Error ? error.message : String(error)}`
+			);
+			throw error; // Rethrow to handle it upstream if needed
+		}
+	}
+
+	/**
+	 * Gets a value by key from Redis.
+	 * @param key - The key to get.
+	 * @returns Promise<string | null> The value or null if not found.
+	 */
+	public async get(key: string): Promise<string | null> {
+		if (!this.isReady() || !this.client) {
+			throw new Error('Redis client is not connected or ready. Cannot get value.');
+		}
+		try {
+			const value = await this.client.get(key);
+			return value;
+		} catch (error) {
+			logger.error(
+				`Error getting key ${key} from Redis: ${error instanceof Error ? error.message : String(error)}`
+			);
+			throw error; // Rethrow to handle it upstream if needed
+		}
+	}
+
+	/**
+	 * Deletes a key from Redis.
+	 * @param key - The key to delete.
+	 * @returns Promise<number> Number of keys deleted (1 if key was deleted, 0 if not found).
+	 */
+	public async del(key: string): Promise<number> {
+		if (!this.isReady() || !this.client) {
+			throw new Error('Redis client is not connected or ready. Cannot delete value.');
+		}
+		try {
+			const result = await this.client.del(key);
+			return result;
+		} catch (error) {
+			logger.error(
+				`Error deleting key ${key} from Redis: ${error instanceof Error ? error.message : String(error)}`
+			);
+			throw error; // Rethrow to handle it upstream if needed
+		}
+	}
+
+	/**
 	 * Safely performs a PING command to check active connection.
 	 * @returns {Promise<boolean>} True if PONG received, false otherwise.
 	 */

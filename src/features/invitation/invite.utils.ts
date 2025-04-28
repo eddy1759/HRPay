@@ -6,7 +6,7 @@ import env from '../../config/env';
 import logger from '@/config/logger';
 import { prisma } from '../../lib/prisma';
 import { InviteJwtPayload, VerifiedInviteData, UserOnboardingData } from './invite.types';
-import { UserRole, Invitation, User, Company, InviteStatus } from '@prisma/client';
+import { EmployeeUserRole, Invitation, User, Company, InviteStatus } from '@prisma/client';
 import { ApiError, InternalServerError, BadRequestError } from '@/utils/ApiError';
 
 /* Error Classes */
@@ -140,7 +140,7 @@ const verifyInviteTokenAndState = async (token: string): Promise<VerifiedInviteD
 		}
 
 		// Check if related company exists (should always if FK is enforced, but good check)
-		if (!inviteFromDb.company) {
+		if (!inviteFromDb.company || inviteFromDb.company.isDeleted) {
 			logger.error(
 				`Data integrity issue: Invitation ${inviteFromDb.id} missing company link.`
 			);
@@ -188,11 +188,11 @@ const verifyInviteTokenAndState = async (token: string): Promise<VerifiedInviteD
 		if (inviter) {
 			// Only check permissions if the inviter user still exists
 			// Define roles allowed to *send* invites here or pass from service if needed
-			const rolesAllowedToSend: UserRole[] = [UserRole.ADMIN, UserRole.SUPER_ADMIN];
+			const rolesAllowedToSend: EmployeeUserRole[] = [EmployeeUserRole.ADMIN];
 
-			if (!rolesAllowedToSend.includes(inviter.role as UserRole)) {
+			if (!rolesAllowedToSend.includes(inviteFromDb.role as EmployeeUserRole)) {
 				logger.warn(
-					`Inviter ${inviter.id} (Role: ${inviter.role}) lacks permission for invite ${inviteFromDb.id}.`
+					`Inviter ${inviter.id} (Role: ${inviteFromDb.role}) lacks permission for invite ${inviteFromDb.id}.`
 				);
 				// Throw a generic error, as the invite *was* created, but maybe shouldn't be used now?
 				// Or maybe allow it if they had permission *at the time of creation*? Business decision.

@@ -1,9 +1,14 @@
 import { z } from 'zod';
+import { EmployeeUserRole } from '@prisma/client';
 
 // Schema for user registration
 export const RegisterSchema = z.object({
 	body: z.object({
 		email: z.string({ required_error: 'Email is required' }).email('Invalid email format'),
+		firstName: z.string({ required_error: 'First name is required' }),
+		lastName: z.string({ required_error: 'Last name is required' }),
+		companyId: z.string({ required_error: 'Company ID is required' }),
+		role: z.enum([EmployeeUserRole.ADMIN, EmployeeUserRole.EMPLOYEE]).optional(),
 		password: z
 			.string({ required_error: 'Password is required' })
 			.min(8, 'Password must be at least 8 characters long'),
@@ -19,6 +24,7 @@ export const LoginSchema = z.object({
 	body: z.object({
 		email: z.string({ required_error: 'Email is required' }).email('Invalid email format'),
 		password: z.string({ required_error: 'Password is required' }),
+		companyId: z.string().optional(),
 	}),
 });
 

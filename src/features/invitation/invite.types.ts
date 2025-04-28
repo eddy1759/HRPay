@@ -1,5 +1,5 @@
 import * as jwt from 'jsonwebtoken';
-import { Invitation, User, Company, UserRole } from '@prisma/client';
+import { Invitation, User, Company, EmployeeUserRole } from '@prisma/client';
 
 /* Interfaces */
 export interface InviteJwtPayload extends jwt.JwtPayload {
@@ -20,7 +20,7 @@ export interface UserOnboardingData {
 	email: string; // From verified token/invite record
 	hashedPassword: string; // Password MUST be hashed before passing here
 	companyId: string; // From verified token/invite record
-	role: UserRole; // From verified token/invite record
+	role: EmployeeUserRole; // From verified token/invite record
 	firstName: string; // Collected from user
 	lastName: string; // Collected from user
 }

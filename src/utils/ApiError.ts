@@ -1,3 +1,4 @@
+import e from 'express';
 import { StatusCodes } from 'http-status-codes';
 
 /**
@@ -60,3 +61,13 @@ export class ServiceUnavailableError extends ApiError {
 		super(StatusCodes.SERVICE_UNAVAILABLE, message);
 	}
 }
+
+export class MultiCompanyLoginRequiredError extends ApiError {
+	companies: {id: string; name: string }[];
+
+	constructor(message: string, companies: {id: string; name: string }[]) {
+		super(StatusCodes.BAD_REQUEST, message);
+		this.name = 'MultiCompanyLoginRequiredError';
+		this.companies = companies;
+	}
+} 

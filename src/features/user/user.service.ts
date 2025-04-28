@@ -5,7 +5,7 @@ import { authUtils } from '@/utils/auth.utils';
 const SAFE_USER_SELECT = {
 	id: true,
 	email: true,
-	role: true,
+	systemRole: true,
 	companyId: true,
 	isVerified: true, // Include verification status
 	createdAt: true,
@@ -43,6 +43,9 @@ const createUser = async (data: CreateUserInput) => {
 const findUserByEmailInternal = async (email: string): Promise<User | null> => {
 	return prisma.user.findUnique({
 		where: { email },
+		include: {
+			employees: true
+		}
 	});
 };
 
@@ -83,6 +86,18 @@ const updateUserInternal = async (id: string, data: UpdateUserInputInternal) => 
 	return user;
 };
 
+const findUserByIdInternal = async (id: string) => {
+	return prisma.user.findUnique({
+		where: { id },
+		select: {
+			id: true,
+			systemRole: true,
+			isVerified: true,
+			employees: true
+		}
+	});
+};
+
 export const userService = {
 	createUser,
 	findUserByEmailInternal,
@@ -90,4 +105,5 @@ export const userService = {
 	updateUser,
 	getUserByEmail,
 	updateUserInternal,
+	findUserByIdInternal
 };

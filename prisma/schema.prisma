@@ -8,23 +8,24 @@ datasource db {
 }
 
 // --- Enums ---
+enum SystemUserRole {
+  SUPER_ADMIN
+  BASIC_USER
+}
 
-enum UserRole {
-  SUPER_ADMIN // System-wide admin
-  ADMIN       // Company-level admin
-  EMPLOYEE    // Standard employee user
+enum EmployeeUserRole {
+  ADMIN
+  EMPLOYEE
 }
 
 enum PayrollStatus {
-  DRAFT     // Generated, pending approval
-  APPROVED  // Approved, ready for payment
-  PAID      // Payment completed
-  ERROR    // Error during processing (e.g., payment failure)
-  CANCELLED // Cancelled by admin (before payment)
+  DRAFT
+  APPROVED
+  PAID
+  ERROR
+  CANCELLED
 }
 
-
-// Invitation lifecycle tracking
 enum InviteStatus {
   PENDING
   ACCEPTED
@@ -42,7 +43,6 @@ enum PayType {
   HOURLY
 }
 
-
 enum LeaveType {
   ANNUAL
   SICK
@@ -53,233 +53,197 @@ enum LeaveRequestStatus {
   PENDING
   APPROVED
   REJECTED
-  CANCELLED // By employee or admin before approval
+  CANCELLED
 }
 
-// --- Core Models ---
+enum AuditActionType {
+  PAYROLL_GENERATED
+  PAYROLL_QUEUE_FAILURE
+  PAYROLL_APPROVED
+  PAYROLL_PAID
+  PAYROLL_REJECTED
+  PAYROLL_CANCELLED
+}
 
+// --- Core Models with Multi‑Tenancy & Soft‑Delete Flags ---
 model Company {
-  id           String       @id @default(uuid()) @db.Uuid
-  name         String       @db.VarChar(255)
-  email        String       @unique @db.VarChar(255) // Company contact email
+  id          String     @id @default(uuid()) @db.Uuid
+  name        String     @unique @db.VarChar(255)
+  email       String     @unique @db.VarChar(255)
+  isDeleted   Boolean    @default(false)
 
-  // Relationships
-  users       User[]       // Users linked to this company
-  employees   Employee[]   // Employees belonging to this company
-  payrolls    Payroll[]    // Payrolls run by this company
-  invitations Invitation[] // Invitations sent by this company
+  employees   Employee[]
+  payrolls    Payroll[]
+  invitations Invitation[]
 
-  // Timestamps
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
 
   @@index([email])
+  @@unique([name, email])
   @@map("companies")
 }
 
-/// Represents a user account that can log in to the system.
 model User {
-  id         String   @id @default(uuid()) @db.Uuid
-  email      String   @unique @db.VarChar(255) // Login email
-  password   String   @db.VarChar(255) // Stored HASH - ensure application hashes it!
-  isVerified Boolean  @default(false) // Email verification status
-  role       UserRole @default(EMPLOYEE)
+  id               String            @id @default(uuid()) @db.Uuid
+  email            String            @unique @db.VarChar(255)
+  password         String            @db.VarChar(255)
+  isVerified       Boolean           @default(false)
+  systemRole       SystemUserRole    @default(BASIC_USER)
 
-  // Relationships
-  company   Company? @relation(fields: [companyId], references: [id], onDelete: SetNull)
-  companyId String?  @db.Uuid
+  employees        Employee[]        @relation("UserEmployees")
+  acceptedInvitation Invitation?     @relation("AcceptedByUser")
+  invitationsSent  Invitation[]      @relation("InvitedByUser")
+  auditLogs        AuditLog[]
 
-  // One-to-one link: User might be an Admin without an Employee record.
-  employee Employee? @relation("UserEmployee") // Named relation for 1-to-1
-
-  // Invitations
-  acceptedInvitation Invitation? @relation("AcceptedByUser") // Link to the invitation they accepted
-  invitationsSent    Invitation[] @relation("InvitedByUser") // Invitations sent *by* this user (e.g., Admin)
-
-  // Timestamps
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  auditLogs AuditLog[]
-
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
 
   @@index([email])
-  @@index([companyId])
   @@map("users")
 }
 
-/// Represents an employee record, containing employment and basic payroll details.
 model Employee {
-  id            String         @id @default(uuid()) @db.Uuid
-  firstName     String         @db.VarChar(100)
-  lastName      String         @db.VarChar(100)
-  email         String         @unique @db.VarChar(255) // Employee's contact email (can differ from User.email)
-  employmentType EmploymentType @default(FULL_TIME)
+  id             String              @id @default(uuid()) @db.Uuid
+  firstName      String              @db.VarChar(100)
+  lastName       String              @db.VarChar(100)
+  email          String              @db.VarChar(255)
+  employmentType EmploymentType      @default(FULL_TIME)
+  isActive       Boolean             @default(true)
+  isDeleted      Boolean             @default(false)
+  payType        PayType             @default(SALARY)
+  salary         Decimal?            @db.Decimal(12, 2)
+  payRate        Decimal?            @db.Decimal(10, 2)
+  role           EmployeeUserRole    @default(EMPLOYEE)
 
-  isActive      Boolean        @default(true) // For filtering active employees for payroll
-  payType   PayType  @default(SALARY)   // SALARY or HOURLY
-  salary    Decimal? @db.Decimal(12, 2) // Annual salary (if PayType=SALARY)
-  payRate   Decimal? @db.Decimal(10, 2) // Hourly rate (if PayType=HOURLY)
+  userId         String              @db.Uuid
+  user           User                @relation("UserEmployees", fields: [userId], references: [id])
 
-  // Relationships
-  company   Company @relation(fields: [companyId], references: [id], onDelete: Restrict) // Employee must belong to a company
-  companyId String  @db.Uuid
+  companyId      String              @db.Uuid
+  company        Company             @relation(fields: [companyId], references: [id])
 
-  user   User?   @relation("UserEmployee", fields: [userId], references: [id], onDelete: SetNull) // Link to login account
-  userId String? @unique @db.Uuid // Foreign key for the 1-to-1 relation
+  payrolls       EmployeePayroll[]
+  leaveBalances  LeaveBalance[]
+  leaveRequests  LeaveRequest[]      @relation("LeaveRequestedByEmployee")
 
-  payrolls      EmployeePayroll[] // Payroll history for this employee
+  createdAt      DateTime            @default(now())
+  updatedAt      DateTime            @updatedAt
 
-
-  // NEW: Leave Management Relationships
-  leaveBalances LeaveBalance[]
-  leaveRequests LeaveRequest[] @relation("LeaveRequestedByEmployee")
-
-  // Timestamps
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@unique([email, companyId]) // Ensure email is unique per company
+  @@unique([userId, companyId])
   @@index([email])
-  @@index([companyId, isActive]) // Important for fetching active employees for payroll
+  @@index([companyId])
+  @@index([isActive])
   @@map("employees")
 }
 
-/// Represents an invitation to join a company.
 model Invitation {
-  id        String       @id @default(uuid()) @db.Uuid
-  email     String       @db.VarChar(255) // Email invited
-  token     String       @unique @db.VarChar(255) // Secure, unique token for the invite link
-  role      UserRole     @default(EMPLOYEE) // Role assigned upon acceptance
-  status    InviteStatus @default(PENDING)
-  expiresAt DateTime     // Invitations should expire
+  id                 String         @id @default(uuid()) @db.Uuid
+  email              String         @db.VarChar(255)
+  token              String         @unique @db.VarChar(255)
+  role               EmployeeUserRole @default(EMPLOYEE)
+  status             InviteStatus  @default(PENDING)
+  expiresAt          DateTime
 
-  // Relationships
-  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  companyId String  @db.Uuid
+  companyId          String         @db.Uuid
+  company            Company        @relation(fields: [companyId], references: [id], onDelete: Cascade)
 
-  invitedById String? @db.Uuid
-  invitedByUser User? @relation("InvitedByUser", fields: [invitedById], references: [id], onDelete: SetNull)
+  invitedById        String?        @db.Uuid
+  invitedByUser      User?          @relation("InvitedByUser", fields: [invitedById], references: [id], onDelete: SetNull)
 
-  acceptedByUserId String? @unique @db.Uuid
-  acceptedByUser   User?   @relation("AcceptedByUser", fields: [acceptedByUserId], references: [id], onDelete: SetNull)
+  acceptedByUserId   String?        @unique @db.Uuid
+  acceptedByUser     User?          @relation("AcceptedByUser", fields: [acceptedByUserId], references: [id], onDelete: SetNull)
 
-  // Timestamps
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt          DateTime       @default(now())
+  updatedAt          DateTime       @updatedAt
 
-  @@unique([email, companyId, status]) // Allow re-inviting if previous was CANCELLED/EXPIRED
-  @@index([token])
+  @@unique([email, companyId, status])
+  @@unique([token, status])
+  @@index([acceptedByUserId])
   @@index([companyId])
   @@index([status])
   @@map("invitations")
 }
 
-/// Represents a payroll run for a company covering a specific period.
 model Payroll {
-  id          String        @id @default(uuid()) @db.Uuid
-  periodStart DateTime      // Start date of the pay period
-  periodEnd   DateTime      // End date of the pay period
-  paymentDate DateTime?     // Target date for payment disbursement
-  status      PayrollStatus @default(DRAFT) // Tracks the state of the payroll run
+  id             String        @id @default(uuid()) @db.Uuid
+  periodStart    DateTime
+  periodEnd      DateTime
+  paymentDate    DateTime?
+  status         PayrollStatus @default(DRAFT)
+  isDeleted      Boolean       @default(false)
 
-  // Aggregated Totals (Calculated during generation/processing)
-  totalGross      Decimal? @db.Decimal(14, 2)
-  totalNet        Decimal? @db.Decimal(14, 2)
-  employeeCount    Int?     // Number of employees processed in this payroll run
+  totalGross     Decimal?      @db.Decimal(14, 2)
+  totalNet       Decimal?      @db.Decimal(14, 2)
+  employeeCount  Int?
 
+  companyId      String        @db.Uuid
+  company        Company       @relation(fields: [companyId], references: [id], onDelete: Restrict)
 
-  // Relationships
-  company   Company @relation(fields: [companyId], references: [id], onDelete: Restrict) // Payroll MUST belong to a company
-  companyId String  @db.Uuid
+  details        EmployeePayroll[]
+  auditLogs      AuditLog[]
 
-  details EmployeePayroll[] // Line items for each employee in this run
-
-  // Timestamps
-  createdAt DateTime @default(now()) // When the record was created (initial draft start)
-  updatedAt DateTime @updatedAt
-
-  auditLogs AuditLog[] // Audit logs related to this payroll run
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
 
   @@index([status])
   @@index([companyId, periodStart, periodEnd])
   @@index([paymentDate])
-  
   @@map("payrolls")
 }
 
-/// Junction Table: Details for a specific employee within a specific payroll run (Forms the Payslip data).
 model EmployeePayroll {
-  id String @id @default(uuid()) @db.Uuid
+  id                 String      @id @default(uuid()) @db.Uuid
+  grossAmount        Decimal     @db.Decimal(12, 2)
+  netAmount          Decimal     @db.Decimal(12, 2)
+  regularHoursWorked Decimal?    @db.Decimal(6, 2)
+  leaveHoursUsed     Decimal?    @db.Decimal(6, 2)
+  leaveType          LeaveType?
 
-  // Core Pay Calculation
-  grossAmount   Decimal  @db.Decimal(12, 2) // Total earnings before any deductions
-  netAmount     Decimal  @db.Decimal(12, 2) // Take-home pay (Gross - Deductions - Taxes)
+  employeeId         String      @db.Uuid
+  employee           Employee    @relation(fields: [employeeId], references: [id], onDelete: Restrict)
 
-  // Earnings Breakdown (Examples)
-  regularHoursWorked Decimal? @db.Decimal(6, 2)
-  
-  // Leave Taken during this period (Connects to Leave system)
-  leaveHoursUsed Decimal? @db.Decimal(6, 2)
-  leaveType      LeaveType? // Which type of leave was primary if used
+  payrollId          String      @db.Uuid
+  payroll            Payroll     @relation(fields: [payrollId], references: [id], onDelete: Cascade)
 
+  createdAt          DateTime    @default(now())
+  updatedAt          DateTime    @updatedAt
 
-  // Relationships
-  employee   Employee @relation(fields: [employeeId], references: [id], onDelete: Restrict) // Link to the employee
-  employeeId String   @db.Uuid
-
-  payroll   Payroll @relation(fields: [payrollId], references: [id], onDelete: Cascade) // Link to the parent payroll run
-  payrollId String  @db.Uuid
-
-  // Timestamps
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@unique([employeeId, payrollId]) // Employee appears once per payroll
+  @@unique([employeeId, payrollId])
   @@index([employeeId])
   @@index([payrollId])
-  @@map("employee_payrolls") // This table essentially represents the data for a single payslip
+  @@map("employee_payrolls")
 }
 
-
-/// Stores the available leave balance for an employee for a specific leave type.
 model LeaveBalance {
-  id String @id @default(uuid()) @db.Uuid
+  id          String     @id @default(uuid()) @db.Uuid
+  employeeId  String     @db.Uuid
+  employee    Employee   @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  leaveType   LeaveType
+  balance     Decimal    @db.Decimal(6, 2)
+  unit        String     @default("days")
 
-  employee   Employee  @relation(fields: [employeeId], references: [id], onDelete: Cascade)
-  employeeId String    @db.Uuid
-  leaveType  LeaveType // Type of leave (ANNUAL, SICK, etc.)
-  balance    Decimal   @db.Decimal(6, 2) // Current available balance (e.g., in hours or days)
-  unit       String    @default("days") // Could be 'hours' or 'days'
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
 
-  // Timestamps
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@unique([employeeId, leaveType]) // One balance record per employee per leave type
+  @@unique([employeeId, leaveType])
   @@index([employeeId])
   @@map("leave_balances")
 }
 
-/// Represents a request made by an employee to take leave.
 model LeaveRequest {
-  id String @id @default(uuid()) @db.Uuid
+  id          String            @id @default(uuid()) @db.Uuid
+  employeeId  String            @db.Uuid
+  employee    Employee          @relation("LeaveRequestedByEmployee", fields: [employeeId], references: [id], onDelete: Cascade)
+  leaveType   LeaveType
+  startDate   DateTime
+  endDate     DateTime
+  duration    Decimal           @db.Decimal(6, 2)
+  reason      String?           @db.Text
+  status      LeaveRequestStatus @default(PENDING)
+  adminNotes  String?           @db.Text
 
-  employee   Employee           @relation("LeaveRequestedByEmployee", fields: [employeeId], references: [id], onDelete: Cascade)
-  employeeId String             @db.Uuid
-  leaveType  LeaveType          // Type of leave requested
-  startDate  DateTime           // Start date of leave
-  endDate    DateTime           // End date of leave (inclusive)
-  duration   Decimal            @db.Decimal(6, 2) // Requested duration (calculated, in balance units)
-  reason     String?            @db.Text          // Reason provided by employee
-  status     LeaveRequestStatus @default(PENDING)  // Current status of the request
-
-
-  adminNotes    String?   @db.Text // Notes from the approver/rejecter
-
-  // Timestamps
-  createdAt DateTime @default(now()) // When the request was submitted
-  updatedAt DateTime @updatedAt
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
 
   @@index([employeeId])
   @@index([status])
@@ -287,32 +251,15 @@ model LeaveRequest {
   @@map("leave_requests")
 }
 
-
-// --- Auditing ---
-
-enum AuditActionType {
-  PAYROLL_GENERATED
-  PAYROLL_QUEUE_FAILURE
-  PAYROLL_APPROVED
-  PAYROLL_PAID
-  PAYROLL_REJECTED // Example: If approval is denied
-  PAYROLL_CANCELLED // Example: If a draft is cancelled
-  // Add other relevant actions as needed
-}
-
 model AuditLog {
   id         String          @id @default(uuid()) @db.Uuid
-  actionType AuditActionType // What action was performed
+  actionType AuditActionType
   timestamp  DateTime        @default(now())
-
-  // Relationships
-  userId    String? @db.Uuid // Who performed the action
-  user      User?   @relation(fields: [userId], references: [id], onDelete: SetNull)
-
-  payrollId String? @db.Uuid // Which payroll was affected (optional, might be other entities)
-  payroll   Payroll? @relation(fields: [payrollId], references: [id], onDelete: Cascade) // Cascade delete if payroll is deleted
-
-  details Json? // Store additional context/metadata about the event
+  userId     String?         @db.Uuid
+  user       User?           @relation(fields: [userId], references: [id], onDelete: SetNull)
+  payrollId  String?         @db.Uuid
+  payroll    Payroll?        @relation(fields: [payrollId], references: [id], onDelete: Cascade)
+  details    Json?
 
   @@index([actionType])
   @@index([userId])
